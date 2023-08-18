@@ -1,5 +1,5 @@
 ﻿using AdvancedSharpAdbClient;
-using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace ConsoleApp;
@@ -35,15 +35,37 @@ public class TaskTwo
             if (element is not null)
             {
                 await SkipChromeWelcomeScreen(client, device, doc);
+                doc = await GetScreenParsedXmlAsync(client, device);
+                element = doc.Descendants("node")
+                    .FirstOrDefault(e => e.Attribute("text")?.Value == "Search or type URL" || e.Attribute("text")?.Value == "Search or type web address");
             }
         }
-        else
+
+        if (element is not null)
         {
-            Console.WriteLine("Found Search or type URL element");
+            Console.WriteLine("Clicking on Chrome search element...");
             await ClickOnElementAsync(client, device, element);
+
+            Console.WriteLine("Searching for 'my ip address'...");
+            await SearchAndGettingResultAsync(client, device);
         }
 
         Console.WriteLine("**** DONE ****");
+    }
+
+    public static async Task SearchAndGettingResultAsync(AdbClient client, DeviceData device)
+    {
+        string searchQuery = "my ip address";
+        await client.ExecuteRemoteCommandAsync($"input text ' {searchQuery}'", device, new ConsoleOutputReceiver());
+        await client.ExecuteRemoteCommandAsync("input keyevent 66", device, new ConsoleOutputReceiver());
+
+        var elements = client.FindElements(device, "//node[starts-with(@resource-id, 'sa-tpcc')]", TimeSpan.FromSeconds(5));
+        elements = elements.Last().Children.First().Children.Take(2);
+
+        foreach (var element in elements)
+        {
+            Console.WriteLine(element.Attributes.Where(x => x.Key.Equals("text")).First().Value);
+        }
     }
 
     public static async Task ClickOnElementAsync(AdbClient client, DeviceData device, XElement element)
@@ -99,16 +121,15 @@ public class TaskTwo
     public static async Task<XDocument> GetScreenParsedXmlAsync(AdbClient client, DeviceData device)
     {
         var dumpReceiver = new ConsoleOutputReceiver();
-        await client.ExecuteRemoteCommandAsync("uiautomator dump", device, dumpReceiver);
+        await client.ExecuteRemoteCommandAsync("uiautomator dump -D", device, dumpReceiver);
 
         using SyncService sync = new(client, device);
         using Stream stream = new MemoryStream();
-        sync.Pull("/sdcard/window_dump.xml", stream, null, CancellationToken.None);
+        await sync.PullAsync("/sdcard/window_dump.xml", stream, null, CancellationToken.None);
+
         stream.Position = 0;
+        using XmlReader reader = new XmlTextReader(stream);
 
-        using StreamReader reader = new(stream, Encoding.UTF8);
-        string xmlContent = reader.ReadToEnd();
-
-        return XDocument.Parse(xmlContent);
+        return XDocument.Load(reader);
     }
 }
