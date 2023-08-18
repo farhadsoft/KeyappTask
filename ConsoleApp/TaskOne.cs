@@ -4,27 +4,15 @@ namespace ConsoleApp;
 
 public static class TaskOne
 {
-    public static async Task TaskOneAsync()
+    public static async Task TaskOneAsync(AdbClient client, DeviceData device)
     {
-        AdbClient client = new();
-        // Connect to the device
-        client.Connect("127.0.0.1:62001");
+        var runningTasks = await GetAllRunningTasksAsync(client, device);
 
-        // Get the connected device
-        DeviceData? device = client.GetDevices().FirstOrDefault();
-
-        // Print the device status
-        Console.WriteLine("Device status: " + device?.State);
-
-        // Get all running tasks
-        var runningTasks = await TaskOne.GetAllRunningTasksAsync(client, device);
-
-        // Kill all the running tasks
         if (runningTasks.Count > 0)
         {
             foreach (var task in runningTasks)
             {
-                await TaskOne.KillRunningTaskAsync(client, device, task);
+                await KillRunningTaskAsync(client, device, task);
             }
         }
         else
@@ -36,8 +24,13 @@ public static class TaskOne
         Console.WriteLine("**** DONE ****");
     }
 
-    // Get all running tasks
-    public static async Task<List<string>> GetAllRunningTasksAsync(AdbClient client, DeviceData? device)
+    /// <summary>
+    /// Get all running tasks
+    /// </summary>
+    /// <param name="client">AdbClient instance</param>
+    /// <param name="device">Connected device</param>
+    /// <returns></returns>
+    public static async Task<List<string>> GetAllRunningTasksAsync(AdbClient client, DeviceData device)
     {
         List<string> runningTasks = new();
         Console.WriteLine("Getting all running tasks...");
@@ -72,8 +65,14 @@ public static class TaskOne
         return runningTasks;
     }
 
-    // Kill one running task
-    public static async Task KillRunningTaskAsync(AdbClient client, DeviceData? device, string appName)
+    /// <summary>
+    /// Kill one running task
+    /// </summary>
+    /// <param name="client">AdbClient instance</param>
+    /// <param name="device">Connected device</param>
+    /// <param name="appName">Application name</param>
+    /// <returns></returns>
+    public static async Task KillRunningTaskAsync(AdbClient client, DeviceData device, string appName)
     {
         Console.WriteLine($"Killing {appName}...");
 

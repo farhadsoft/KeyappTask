@@ -1,74 +1,114 @@
-﻿using OpenQA.Selenium;
-using OpenQA.Selenium.Appium;
-using OpenQA.Selenium.Appium.Android;
+﻿using AdvancedSharpAdbClient;
+using System.Text;
+using System.Xml.Linq;
 
 namespace ConsoleApp;
 
 public class TaskTwo
 {
-    public static async Task TaskTwoAsync()
+    public static async Task TaskTwoAsync(AdbClient client, DeviceData device)
     {
-        var appiumOptions = new AppiumOptions();
-        appiumOptions.AddAdditionalCapability("platformName", "Android");
-        appiumOptions.AddAdditionalCapability("deviceName", "emulator-5554");
-        appiumOptions.AddAdditionalCapability("platformVersion", "13.0");
-        appiumOptions.AddAdditionalCapability("automationName", "UiAutomator2");
-        appiumOptions.AddAdditionalCapability("noReset", "true");
+        var doc = await GetScreenParsedXmlAsync(client, device);
 
-        var _driver = new AndroidDriver<IWebElement>(new Uri("http://127.0.0.1:4723/wd/hub"), appiumOptions, TimeSpan.FromSeconds(180));
-        _driver.FindElementByXPath("//android.widget.TextView[@content-desc=\'Chrome\']").Click();
+        XElement? element = doc.Descendants("node")
+            .FirstOrDefault(e => e.Attribute("text")?.Value == "Chrome");
 
-        await Task.Delay(TimeSpan.FromSeconds(3));
-
-        try
+        if (element is not null)
         {
-            _driver.FindElementById("com.android.chrome:id/terms_accept").Click();
-            await Task.Delay(TimeSpan.FromSeconds(1));
-            _driver.FindElementById("com.android.chrome:id/negative_button").Click();
-            await Task.Delay(TimeSpan.FromSeconds(5));
-            _driver.FindElementById("com.android.chrome:id/negative_button").Click();
-            await Task.Delay(TimeSpan.FromSeconds(5));
+            Console.WriteLine("Clicking on Chrome element...");
+            await ClickOnElementAsync(client, device, element);
         }
-        catch (Exception)
+        else
         {
-            Console.WriteLine("No terms and conditions");
+            Console.WriteLine("Chrome element not found");
+            return;
         }
 
-        try
-        {
-            _driver.FindElementById("com.android.chrome:id/search_box_text").SendKeys("my ip address");
-            _driver.PressKeyCode(AndroidKeyCode.Enter);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("Something is went wrong: " + ex.Message);
-        }
+        doc = await GetScreenParsedXmlAsync(client, device);
+        element = doc.Descendants("node")
+            .FirstOrDefault(e => e.Attribute("text")?.Value == "Search or type URL" || e.Attribute("text")?.Value == "Search or type web address");
 
-        await Task.Delay(TimeSpan.FromSeconds(3));
-
-        try
+        if (element is null)
         {
-            _driver.Context = _driver.Contexts.Last();
-            var spanElements = _driver.FindElementsByTagName("span").Where(x => x.Text != string.Empty).Select(x => x.Text).ToArray();
-
-            for (int i = 0; i < spanElements.Length; i++)
+            element = doc.Descendants("node")
+                .FirstOrDefault(e => e.Attribute("text")?.Value == "Accept & continue");
+            if (element is not null)
             {
-                if (spanElements[i] == "Your public IP address")
-                {
-                    Console.WriteLine(spanElements[i]);
-                    Console.WriteLine(spanElements[i - 1]);
-                    break;
-                }
+                await SkipChromeWelcomeScreen(client, device, doc);
             }
         }
-        catch (Exception)
+        else
         {
-            Console.WriteLine("No IP address found");
+            Console.WriteLine("Found Search or type URL element");
+            await ClickOnElementAsync(client, device, element);
         }
-        finally
+
+        Console.WriteLine("**** DONE ****");
+    }
+
+    public static async Task ClickOnElementAsync(AdbClient client, DeviceData device, XElement element)
+    {
+        string bounds = element.Attribute("bounds")?.Value ?? string.Empty;
+        var boundsArray = bounds.Split(new char[] { '[', ']', ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(int.Parse).ToArray();
+
+        (int x, int y) = CenterOfCoordinate(boundsArray[0], boundsArray[1], boundsArray[2], boundsArray[3]);
+
+        await client.ExecuteRemoteCommandAsync($"input tap {x} {y}", device, new ConsoleOutputReceiver());
+    }
+
+    public static (int, int) CenterOfCoordinate(int x1, int y1, int x2, int y2)
+    {
+        int centerX = (x1 + x2) / 2;
+        int centerY = (y1 + y2) / 2;
+
+        return (centerX, centerY);
+    }
+
+    public static async Task SkipChromeWelcomeScreen(AdbClient client, DeviceData device, XDocument doc)
+    {
+        var _element = doc.Descendants("node")
+            .FirstOrDefault(e => e.Attribute("text")?.Value == "Accept & continue");
+
+        if (_element is not null)
         {
-            _driver.Quit();
-            _driver.Dispose();
+            await ClickOnElementAsync(client, device, _element);
         }
+
+        doc = await GetScreenParsedXmlAsync(client, device);
+        _element = doc.Descendants("node")
+            .FirstOrDefault(e => e.Attribute("text")?.Value == "No thanks");
+
+        while (_element is not null)
+        {
+            await ClickOnElementAsync(client, device, _element);
+            await Task.Delay(TimeSpan.FromSeconds(5));
+
+            doc = await GetScreenParsedXmlAsync(client, device);
+            _element = doc.Descendants("node")
+                .FirstOrDefault(e => e.Attribute("text")?.Value == "No thanks");
+        }
+    }
+
+    /// <summary>
+    /// Parse the XML content
+    /// </summary>
+    /// <param name="client"></param>
+    /// <param name="device"></param>
+    /// <returns></returns>
+    public static async Task<XDocument> GetScreenParsedXmlAsync(AdbClient client, DeviceData device)
+    {
+        var dumpReceiver = new ConsoleOutputReceiver();
+        await client.ExecuteRemoteCommandAsync("uiautomator dump", device, dumpReceiver);
+
+        using SyncService sync = new(client, device);
+        using Stream stream = new MemoryStream();
+        sync.Pull("/sdcard/window_dump.xml", stream, null, CancellationToken.None);
+        stream.Position = 0;
+
+        using StreamReader reader = new(stream, Encoding.UTF8);
+        string xmlContent = reader.ReadToEnd();
+
+        return XDocument.Parse(xmlContent);
     }
 }
