@@ -1,0 +1,11 @@
+{
+    "dotnet.defaultSolution": "KeyappTask.sln",
+    "cSpell.words": [
+        "dumpsys",
+        "fullscreen",
+        "keyevent",
+        "sdcard",
+        "tpcc",
+        "uiautomator"
+    ]
+}

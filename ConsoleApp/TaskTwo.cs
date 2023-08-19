@@ -8,51 +8,60 @@ public class TaskTwo
 {
     public static async Task TaskTwoAsync(AdbClient client, DeviceData device)
     {
+        // Open Chrome
         var doc = await GetScreenParsedXmlAsync(client, device);
 
-        XElement? element = doc.Descendants("node")
+        var chromeElement = doc.Descendants("node")
             .FirstOrDefault(e => e.Attribute("text")?.Value == "Chrome");
 
-        if (element is not null)
-        {
-            Console.WriteLine("Clicking on Chrome element...");
-            await ClickOnElementAsync(client, device, element);
-        }
-        else
+        if (chromeElement is null)
         {
             Console.WriteLine("Chrome element not found");
             return;
         }
 
-        doc = await GetScreenParsedXmlAsync(client, device);
-        element = doc.Descendants("node")
-            .FirstOrDefault(e => e.Attribute("text")?.Value == "Search or type URL" || e.Attribute("text")?.Value == "Search or type web address");
+        // Click on Chrome
+        Console.WriteLine("Clicking on Chrome element...");
+        await ClickOnElementAsync(client, device, chromeElement);
 
-        if (element is null)
+        // Try to find the search element or skip the welcome screen
+        doc = await GetScreenParsedXmlAsync(client, device);
+        
+        var searchElement = doc.Descendants("node")
+            .FirstOrDefault(e => e.Attribute("text")?
+            .Value == "Search or type URL" || e.Attribute("text")?
+            .Value == "Search or type web address");
+
+        if (searchElement is null)
         {
-            element = doc.Descendants("node")
-                .FirstOrDefault(e => e.Attribute("text")?.Value == "Accept & continue");
-            if (element is not null)
-            {
-                await SkipChromeWelcomeScreen(client, device, doc);
-                doc = await GetScreenParsedXmlAsync(client, device);
-                element = doc.Descendants("node")
-                    .FirstOrDefault(e => e.Attribute("text")?.Value == "Search or type URL" || e.Attribute("text")?.Value == "Search or type web address");
-            }
+            Console.WriteLine("Skipping Chrome welcome screen...");
+            await SkipChromeWelcomeScreen(client, device, doc);
+
+            doc = await GetScreenParsedXmlAsync(client, device);
+
+            searchElement = doc.Descendants("node")
+                .FirstOrDefault(e => e.Attribute("text")?
+                .Value == "Search or type URL" || e.Attribute("text")?
+                .Value == "Search or type web address");
         }
 
-        if (element is not null)
+        // Finally, search for "my ip address" and get the result
+        if (searchElement is not null)
         {
             Console.WriteLine("Clicking on Chrome search element...");
-            await ClickOnElementAsync(client, device, element);
+            await ClickOnElementAsync(client, device, searchElement);
 
             Console.WriteLine("Searching for 'my ip address'...");
             await SearchAndGettingResultAsync(client, device);
         }
 
-        Console.WriteLine("**** DONE ****");
+        Console.WriteLine("**** Task Two is DONE ****");
     }
 
+    /// <summary>
+    /// Search for "my ip address" and get the result
+    /// </summary>
+    /// <returns></returns>
     public static async Task SearchAndGettingResultAsync(AdbClient client, DeviceData device)
     {
         string searchQuery = "my ip address";
@@ -68,6 +77,10 @@ public class TaskTwo
         }
     }
 
+    /// <summary>
+    /// Click on the element
+    /// </summary>
+    /// <returns></returns>
     public static async Task ClickOnElementAsync(AdbClient client, DeviceData device, XElement element)
     {
         string bounds = element.Attribute("bounds")?.Value ?? string.Empty;
@@ -79,6 +92,10 @@ public class TaskTwo
         await client.ExecuteRemoteCommandAsync($"input tap {x} {y}", device, new ConsoleOutputReceiver());
     }
 
+    /// <summary>
+    /// Get the center of the coordinate for click
+    /// </summary>
+    /// <returns></returns>
     public static (int, int) CenterOfCoordinate(int x1, int y1, int x2, int y2)
     {
         int centerX = (x1 + x2) / 2;
@@ -87,6 +104,10 @@ public class TaskTwo
         return (centerX, centerY);
     }
 
+    /// <summary>
+    /// Skip the welcome screen on Chrome
+    /// </summary>
+    /// <returns></returns>
     public static async Task SkipChromeWelcomeScreen(AdbClient client, DeviceData device, XDocument doc)
     {
         var _element = doc.Descendants("node")
@@ -115,13 +136,11 @@ public class TaskTwo
     /// <summary>
     /// Parse the XML content
     /// </summary>
-    /// <param name="client"></param>
-    /// <param name="device"></param>
     /// <returns></returns>
     public static async Task<XDocument> GetScreenParsedXmlAsync(AdbClient client, DeviceData device)
     {
         var dumpReceiver = new ConsoleOutputReceiver();
-        await client.ExecuteRemoteCommandAsync("uiautomator dump -D", device, dumpReceiver);
+        await client.ExecuteRemoteCommandAsync("uiautomator dump", device, dumpReceiver);
 
         using SyncService sync = new(client, device);
         using Stream stream = new MemoryStream();

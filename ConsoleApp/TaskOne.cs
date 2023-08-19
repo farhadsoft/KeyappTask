@@ -21,7 +21,7 @@ public static class TaskOne
             return;
         }
 
-        Console.WriteLine("**** DONE ****");
+        Console.WriteLine("**** Task One is DONE ****");
     }
 
     /// <summary>
